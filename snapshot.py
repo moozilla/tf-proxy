@@ -1,17 +1,19 @@
-"""Decode Tetris Friends Snapshot objects"""
+"""Decode Tetris Friends Snapshot objects."""
 
 import base64
 import zlib
 
-field_height = 20
-field_width = 10
+FIELD_HEIGHT = 20
+FIELD_WIDTH = 10
 
 
 def decode_snapshot(snapshot):
     """Decode a TF snapshot object into a multidimensional list.
 
-    :param snapshot: Snapshot in string form. This is base64 encoded and compressed with zlib.
-    :returns:        The decoded matrix in list form. Each row is a list of colors for that cell.
+    :param snapshot: Snapshot in string form. This is base64 encoded and compressed with
+                     zlib.
+    :returns:        The decoded matrix in list form. Each row is a list of colors for
+                     that cell.
 
     """
     buffer = zlib.decompress(base64.b64decode(snapshot))
@@ -20,9 +22,9 @@ def decode_snapshot(snapshot):
     # print(f"{incoming_lines} incoming lines")
     pos = 1  # position in the buffer
     field = []
-    for row in range(field_height):
+    for row in range(FIELD_HEIGHT):
         field_row = []
-        for col in range(field_width):
+        for col in range(FIELD_WIDTH):
             byte = buffer[pos]
             mino_id = byte >> 4
             flags = byte & 0xF
@@ -42,17 +44,11 @@ def decode_snapshot(snapshot):
 if __name__ == "__main__":
     print(
         decode_snapshot(
-            "eNpjWEABYGiAAQQLjQdmJmUUVRYISTAwBCprOJYIAxkMoarOPkIyQAZDiIoLAxgkZTLAQCqclcIwwgAA1cc+0w==",
-            "test",
+            "eNpjWEABYGiAAQQLjQdmJmUUVRYISTAwBCprOJYIAxkMoarOPkIyQAZDiIoLAxgkZTLAQCqclc"
+            "IwwgAA1cc+0w=="
         )
     )
+    print(decode_snapshot("eNpjWEABaAACBhDRYGRhZMHg7MEQwJCclcHA4MIABCkMo4B0AACjLi2N"))
     print(
-        decode_snapshot(
-            "eNpjWEABaAACBhDRYGRhZMHg7MEQwJCclcHA4MIABCkMo4B0AACjLi2N", "test"
-        )
-    )
-    print(
-        decode_snapshot(
-            "eNpjWEABaAACBhDRYGRhZMHg7FEYwJCclcHA4FJUV8GQwjAKSAcA6gEvZg==", "test"
-        )
+        decode_snapshot("eNpjWEABaAACBhDRYGRhZMHg7FEYwJCclcHA4FJUV8GQwjAKSAcA6gEvZg==")
     )

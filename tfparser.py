@@ -1,4 +1,6 @@
-import binascii
+"""Parse Tetris Friends network packets."""
+
+# import binascii
 import time
 from xml.etree import ElementTree
 from collections import defaultdict
@@ -7,14 +9,21 @@ import fumen
 from snapshot import decode_snapshot
 
 
-def parse(data, port, origin, persistent_data):
+def parse(data, origin, persistent_data):
+    """Parse data received in a packet.
+
+    :param data:            A bytes object representing the data received
+    :param origin:          String representing origin of the packet, eg. "server"
+    :param persistent_data: Dict used to persist data when module is reloaded
+
+    """
     # if origin == "server":
     #     return
     # print("[{}({})] {}".format(origin, port, binascii.hexlify(data)))
     msg = data.decode().rstrip("\x00")
 
     if msg[0] == "%":
-        percentHandler(msg.strip("%").split("%"), origin, persistent_data)
+        percent_handler(msg.strip("%").split("%"), origin, persistent_data)
         return
 
     try:
@@ -22,7 +31,7 @@ def parse(data, port, origin, persistent_data):
         elem = ElementTree.fromstring(msg, parser=parser)
         if elem.tag == "msg" and elem.attrib["t"] == "sys":
             body = elem[0]
-            sysHandler(origin, body)
+            sys_handler(origin, body)
         elif elem.tag == "msg" and elem.attrib["xt"] == "sys":
             # ignore these for now, probably use something like xthandler
             pass
@@ -30,14 +39,15 @@ def parse(data, port, origin, persistent_data):
             # print(origin, "Unknown tag detected:")
             # printElem(elem)
             pass
-    except Exception as e:
+    except Exception as exception:
         # can't parse too long or too short tags correctly, need to change to a stream
         # print(e)
         # print("[{}({})] {}".format(origin, port, msg))
         pass
 
 
-def percentHandler(msg, origin, persistent_data):
+def percent_handler(msg, origin, persistent_data):
+    """Handle packets that start with a percent."""
     # fields object is defaultdict, passed in, used to persist frames
     if msg[0] == "xt":
         if msg[1] == "livePiece":
@@ -56,10 +66,9 @@ def percentHandler(msg, origin, persistent_data):
                 persistent_data["fields"][player_id].append(
                     (decode_snapshot(snapshot), comment)
                 )
-            except Exception as e:
+            except Exception as exception:
                 # print(msg[2:])
-                print(e)
-            pass
+                print(exception)
         elif msg[1] == "results":
             # only output once
             if persistent_data["game_started"]:
@@ -72,7 +81,6 @@ def percentHandler(msg, origin, persistent_data):
 
                 persistent_data["fields"] = defaultdict(list)  # reset fields
             # game end -- output fumens
-            pass
         elif msg[1] == "resultsDone":
             # game start
             pass
@@ -89,7 +97,7 @@ def percentHandler(msg, origin, persistent_data):
         print("Unknown % packet", msg)
 
 
-def sysHandler(origin, body):
+def sys_handler(origin, body):
     """Parse msg tags where t= sys. Handlers are defined in SysHandler.as."""
     action = body.attrib["action"]
     if action == "uCount":
@@ -100,7 +108,8 @@ def sysHandler(origin, body):
         # # not defined for room 1, probably count in your rank?
         # spectators = body.attrib["s"] if "s" in body.attrib else None
         # print(
-        #     f"== UserCountChange - Room: {room}, Users: {users}, Spectators: {spectators} =="
+        #   f"== UserCountChange - Room: {room}, Users: {users}, "
+        #  "Spectators: {spectators} =="
         # )
     elif action == "uER":
         # handleUserEnterRoom
@@ -120,10 +129,11 @@ def sysHandler(origin, body):
         pass
     else:
         print(origin, end="")
-        printElem(body)
+        print_elem(body)
 
 
-def printElem(elem, depth=0):
+def print_elem(elem, depth=0):
+    """Recursively print out an XML tree for debugging."""
     print(
         "".join(" " * depth),
         "<" + elem.tag + ">",
@@ -133,4 +143,4 @@ def printElem(elem, depth=0):
         elem.text,
     )
     for child in elem:
-        printElem(child, depth=depth + 1)
+        print_elem(child, depth=depth + 1)
