@@ -15,13 +15,14 @@ For this to work you will need to route "sfs.tetrisfriends.com" to localhost in 
 
 """
 # import binascii
-# import os
+import os
 import socket
-import sys
 from threading import Thread
 from importlib import reload
 from collections import defaultdict
 import tfparser as parser
+
+NULL_BYTE = b"\x00"
 
 # This is the IP for sfs.tetrisfriends.com
 TF_SERVER = "50.56.1.203"
@@ -53,16 +54,17 @@ class Proxy2Server(Thread):
         separate thread.
 
         """
+        buffer = b""
         while True:
             data = self.server.recv(4096)
             if data:
-                # print("[{}] <- {}".format(self.port, binascii.hexlify(data[:100])))
-                try:
-                    reload(parser)
-                    parser.parse(data, "server", PERSISTENT_DATA)
-                except Exception as exception:
-                    print("server[{}]".format(self.port), exception)
-                # forward to client
+                # process data
+                buffer += data
+                while NULL_BYTE in buffer:
+                    packet, _, buffer = buffer.partition(NULL_BYTE)
+                    process_packet(packet, "server")
+                # forward data to game, do this after processing, in case we want to
+                # suppress sending data later
                 self.game.sendall(data)
 
 
@@ -84,16 +86,17 @@ class Game2Proxy(Thread):
 
     def run(self):
         """Receive packets from the client and run them through the parser module."""
+        buffer = b""
         while True:
             data = self.game.recv(4096)
             if data:
-                # print("[{}] -> {}".format(self.port, binascii.hexlify(data[:100])))
-                try:
-                    reload(parser)
-                    parser.parse(data, "client", PERSISTENT_DATA)
-                except Exception as exception:
-                    print("client[{}]".format(self.port), exception)
-                # forward to server
+                # process data
+                buffer += data
+                while NULL_BYTE in buffer:
+                    packet, _, buffer = buffer.partition(NULL_BYTE)
+                    process_packet(packet, "client")
+                # forward data to server, do this after processing, in case we want to
+                # suppress sending data later
                 self.server.sendall(data)
 
 
@@ -112,7 +115,7 @@ class Proxy(Thread):
     def run(self):
         """Create the two proxy connections and set up the bridge."""
         while True:
-            print("[proxy({})] setting up".format(self.port))
+            print("[proxy({})] setting up - waiting for connection".format(self.port))
             self.g2p = Game2Proxy(self.from_host, self.port)  # waiting for a client
             self.p2s = Proxy2Server(self.to_host, self.port)
             print("[proxy({})] connection established".format(self.port))
@@ -121,6 +124,24 @@ class Proxy(Thread):
 
             self.g2p.start()
             self.p2s.start()
+
+
+def process_packet(packet, origin):
+    """Process a packet of data.
+
+    This is a shared wrapper for processing data from both client and server.
+
+    :param packet: bytes object representing binary data for one packet
+    :param origin: string representing origin of packet, eg. "server"
+
+    """
+    try:
+        # print(origin, packet)
+        reload(parser)
+        parser.parse(packet, origin, PERSISTENT_DATA)
+    except Exception as exception:
+        print(f"Error processing {origin} packet:", packet[:32], "…")
+        print(exception)
 
 
 def main():
@@ -132,9 +153,9 @@ def main():
     while True:
         try:
             cmd = input("$ ")
-            if cmd[:4] == "quit":
-                sys.exit()
-                # os._exit(0)
+            if cmd[:1] == "q":
+                # sys.exit doesn't work, there's probably a better way to do this
+                os._exit(0)  # pylint: disable=W0212
         except Exception as exception:
             print(exception)
 
