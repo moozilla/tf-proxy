@@ -8,42 +8,41 @@ from collections import defaultdict
 import fumen
 from snapshot import decode_snapshot
 
+IGNORED_TAGS = ["policy-file-request", "cross-domain-policy"]
+IGNORED_SYS_ACTS = ["verChk", "apiOK", "login", "autoJoin"]
 
-def parse(data, origin, persistent_data):
+
+def parse(packet_data, origin, persistent_data):
     """Parse data received in a packet.
 
-    :param data:            A bytes object representing the data received
+    :param packet_data:     A bytes object representing the data received
     :param origin:          String representing origin of the packet, eg. "server"
     :param persistent_data: Dict used to persist data when module is reloaded
 
     """
-    # if origin == "server":
-    #     return
-    # print("[{}({})] {}".format(origin, port, binascii.hexlify(data)))
-    msg = data.decode().rstrip("\x00")
+    # decode packet data into string
+    msg = packet_data.decode()
 
+    # there are two types of packets, simple ones in this format:
+    # %xt%arg%arg%
     if msg[0] == "%":
         percent_handler(msg.strip("%").split("%"), origin, persistent_data)
         return
 
-    try:
-        parser = ElementTree.XMLParser(encoding="utf-8")
-        elem = ElementTree.fromstring(msg, parser=parser)
-        if elem.tag == "msg" and elem.attrib["t"] == "sys":
-            body = elem[0]
-            sys_handler(origin, body)
-        elif elem.tag == "msg" and elem.attrib["xt"] == "sys":
-            # ignore these for now, probably use something like xthandler
-            pass
-        else:
-            # print(origin, "Unknown tag detected:")
-            # printElem(elem)
-            pass
-    except Exception as exception:
-        # can't parse too long or too short tags correctly, need to change to a stream
-        # print(e)
-        # print("[{}({})] {}".format(origin, port, msg))
+    # and these more complicated ones that are XML
+    parser = ElementTree.XMLParser(encoding="utf-8")
+    elem = ElementTree.fromstring(msg, parser=parser)
+    if elem.tag == "msg" and elem.attrib["t"] == "sys":
+        body = elem[0]
+        sys_handler(origin, body)
+    elif elem.tag == "msg" and elem.attrib["t"] == "xt":
+        # ignore these for now, probably use something like xthandler
         pass
+    elif elem.tag in IGNORED_TAGS:
+        pass
+    else:
+        print(f"unknown tag from {origin}:")
+        print_elem(elem, max_depth=2)
 
 
 def percent_handler(msg, origin, persistent_data):
@@ -68,7 +67,7 @@ def percent_handler(msg, origin, persistent_data):
                 )
             except Exception as exception:
                 # print(msg[2:])
-                print(exception)
+                print("snapshot exception", exception)
         elif msg[1] == "results":
             # only output once
             if persistent_data["game_started"]:
@@ -90,11 +89,20 @@ def percent_handler(msg, origin, persistent_data):
         elif msg[1] == "topOut":
             # player got topped out
             pass
+        elif msg[1] == "zoneUserCount":
+            # server telling us how many users are online
+            # eg. ['zoneUserCount', '1', '243', '', '467315657']
+            num_users = msg[3]
+            num_games = msg[5]
+            print(
+                f"Logged in successfully. "
+                f"{num_users} online, {num_games} games played."
+            )
         else:
-            print(origin, end="")
-            print(msg[1:])
+            # % packet is implied by square brackets
+            print(f"{origin}:", msg[1:])
     else:
-        print("Unknown % packet", msg)
+        print(f"unknown % packet from {origin}", msg)
 
 
 def sys_handler(origin, body):
@@ -127,20 +135,33 @@ def sys_handler(origin, body):
     elif action == "roomDel":
         # handleRoomDeleted
         pass
+    elif action == "rmList":
+        # server sends list of all the rooms
+        pass
+    elif action == "joinOK":
+        # looks like list of all users in each room?
+        pass
+    elif action == "setUvars":
+        # sending info about myself, could be interesting
+        pass
+    elif action in IGNORED_SYS_ACTS:
+        pass
     else:
-        print(origin, end="")
-        print_elem(body)
+        # sys packet is implied by curly brackets
+        print(f"{origin}:")
+        print_elem(body, max_depth=2)
 
 
-def print_elem(elem, depth=0):
+def print_elem(elem, depth=0, max_depth=10, max_children=3):
     """Recursively print out an XML tree for debugging."""
-    print(
-        "".join(" " * depth),
-        "<" + elem.tag + ">",
-        "attrib:",
-        elem.attrib,
-        "text:",
-        elem.text,
-    )
-    for child in elem:
-        print_elem(child, depth=depth + 1)
+    padding = "".join(" " * depth)
+    print(padding, "<" + elem.tag + ">", "attrib:", elem.attrib, "text:", elem.text)
+    for child in elem[:max_children]:
+        if depth >= max_depth:
+            print(padding + "  …")
+            break
+        else:
+            print_elem(child, depth=depth + 1, max_depth=max_depth)
+    hidden_children = len(elem[max_children:])
+    if hidden_children:
+        print(padding, f" … {hidden_children} more children hidden")
