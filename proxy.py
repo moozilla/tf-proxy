@@ -19,7 +19,7 @@ import os
 import socket
 from threading import Thread
 from importlib import reload
-from collections import defaultdict
+from collections import defaultdict, deque
 import tfparser as parser
 
 NULL_BYTE = b"\x00"
@@ -46,6 +46,7 @@ class Proxy2Server(Thread):
         self.host = host
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.connect((host, port))
+        self.queue = deque()
 
     def run(self):
         """Receive packets from the server and run them through the parser module.
@@ -56,12 +57,17 @@ class Proxy2Server(Thread):
         """
         buffer = b""
         while True:
+            # not sure if this should send one per packet or all at once
+            while self.queue:
+                packet = self.queue.popleft()
+                print("sending packet to client:", packet)
+                self.game.sendall(packet)
             data = self.server.recv(4096)
             if data:
-                # process data
                 buffer += data
                 while NULL_BYTE in buffer:
                     packet, _, buffer = buffer.partition(NULL_BYTE)
+                    # could make this return if we should suppress
                     process_packet(packet, "server")
                 # forward data to game, do this after processing, in case we want to
                 # suppress sending data later
@@ -83,14 +89,18 @@ class Game2Proxy(Thread):
         sock.listen(1)
         # waiting for a connection
         self.game, _ = sock.accept()
+        self.queue = deque()
 
     def run(self):
         """Receive packets from the client and run them through the parser module."""
         buffer = b""
         while True:
+            while self.queue:
+                packet = self.queue.popleft()
+                print("sending packet to server:", packet)
+                self.server.sendall(packet)
             data = self.game.recv(4096)
             if data:
-                # process data
                 buffer += data
                 while NULL_BYTE in buffer:
                     packet, _, buffer = buffer.partition(NULL_BYTE)
@@ -141,7 +151,7 @@ def process_packet(packet, origin):
         parser.parse(packet, origin, PERSISTENT_DATA)
     except Exception as exception:
         print(f"Error processing {origin} packet:", packet[:32], "…")
-        print(exception)
+        print(repr(exception))
 
 
 def main():
@@ -156,6 +166,16 @@ def main():
             if cmd[:1] == "q":
                 # sys.exit doesn't work, there's probably a better way to do this
                 os._exit(0)  # pylint: disable=W0212
+            elif cmd[:1] == "s":
+                # send packet to server (from client)
+                packet = cmd[1:].encode() + NULL_BYTE
+                proxy.g2p.queue.append(packet)
+                print("c->s:", packet)
+            elif cmd[:1] == "c":
+                # send packet to client (from server)
+                packet = cmd[1:].encode() + NULL_BYTE
+                proxy.p2s.queue.append(packet)
+                print("s->c:", packet)
         except Exception as exception:
             print(exception)
 
