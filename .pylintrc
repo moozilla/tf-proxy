@@ -1,0 +1,5 @@
+[BASIC]
+good-names=i,j,x,y
+
+[MESSAGES CONTROL]
+disable=W0612,W0703,W0611,W0613
